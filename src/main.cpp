@@ -7,11 +7,18 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
+#include "planner.h"
 
 // for convenience
 using nlohmann::json;
 using std::string;
 using std::vector;
+
+const double MAX_SPEED = 49.5;
+const double MAX_ACC = .224;
+int lane = 1;
+Planner plan(MAX_SPEED, MAX_ACC, lane);
 
 int main() {
   uWS::Hub h;
@@ -87,18 +94,127 @@ int main() {
           // Sensor Fusion Data, a list of all other cars on the same side 
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
-
-          json msgJson;
-
+          
+          // update ego state into planner class
+          plan.setEgoState(car_x, car_y, car_s, car_d, car_yaw, car_speed);
+          
+          // Prediction : Analysing other cars positions.
+          plan.findObstacles(sensor_fusion);
+          //double max_speed = plan.getSpeed();
+          
+          // plan trajectory
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+          plan.computeTrajectory(previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y,  map_waypoints_s, next_x_vals, next_y_vals);
+          /*
+          double speed_diff = MAX_ACC;
+          
+          vector<double> pnt_x, pnt_y;
+          int prev_size = previous_path_x.size();
+          double ref_x, ref_y, ref_yaw, ref_vel;
+          if (prev_size < 2){
+            // compute ref e prev points
+            double prev_x = car_x - cos(car_yaw);
+            double prev_y = car_y - sin(car_yaw);
+            ref_x = car_x;
+            ref_y = car_y;
+            ref_yaw = car_yaw;
+            
+            // set initial points fo spline
+            pnt_x.push_back(prev_x);
+            pnt_y.push_back(prev_y);
+            pnt_x.push_back(car_x);
+            pnt_y.push_back(car_y);
+            
+            // setinitial speed
+          	ref_vel = car_speed;
+          }
+          else{
+            // compute ref e prev points
+            double prev_x = previous_path_x[prev_size - 2];
+            double prev_y = previous_path_y[prev_size - 2];
+            ref_x = previous_path_x[prev_size - 1];
+            ref_y = previous_path_y[prev_size - 1];
+            ref_yaw = atan2(ref_y - prev_y, ref_x - prev_x);
+            
+            // set initial points fo spline
+            pnt_x.push_back(prev_x);
+            pnt_y.push_back(prev_y);
+            pnt_x.push_back(ref_x);
+            pnt_y.push_back(ref_y);
+            
+            // setinitial speed
+            double dx = sqrt(pow(ref_x - prev_x, 2) + pow(ref_y - prev_y, 2));
+          	ref_vel = dx*2.24/0.02;
+          }          
+          // create waypoints for the spline
+          int lookahead = 90;
+          int step_s = 30;
+          for (float delta_s = step_s; delta_s <= lookahead; delta_s += step_s){
+            vector<double> next_waypoint = getXY(car_s + delta_s, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            pnt_x.push_back(next_waypoint[0]);
+            pnt_y.push_back(next_waypoint[1]);
+          }
+          
+          
+          // change reference frame
+          for (int pnt_idx = 0; pnt_idx < pnt_x.size(); ++pnt_idx){
+            double dx = pnt_x[pnt_idx] - ref_x;
+            double dy = pnt_y[pnt_idx] - ref_y;
+            pnt_x[pnt_idx] = dx*cos(-ref_yaw) - dy*sin(-ref_yaw);
+            pnt_y[pnt_idx] = dx*sin(-ref_yaw) + dy*cos(-ref_yaw);
+          }
+          
+          // create the spline
+          tk::spline ref_s;
+          ref_s.set_points(pnt_x, pnt_y);
+          
+          // recover the point in the prev path
+          for (int pnt_idx = 0; pnt_idx < previous_path_x.size(); ++pnt_idx){
+            next_x_vals.push_back(previous_path_x[pnt_idx]);
+            next_y_vals.push_back(previous_path_y[pnt_idx]);
+          }
+          
+          // compute the spline variation that guarantees the desired velocity
+          double spline_x = 50;
+          double spline_y = ref_s(spline_x);
+          double spline_dist = sqrt(spline_x*spline_x + spline_y*spline_y);
+          
+          double x_increment = 0;
 
-          /**
-           * TODO: define a path made up of (x,y) points that the car will visit
-           *   sequentially every .02 seconds
-           */
+          for( int i = 1; i < 50 - prev_size; i++ ) {
+            // regulate the speed
+            if (ref_vel < max_speed){
+              // increase speed till max speed
+              ref_vel = fmin(ref_vel + speed_diff, max_speed);
+            }
+            else{
+              // decrease speed till max speed
+              ref_vel = fmax(ref_vel - speed_diff, max_speed);
+            }
+            
+            // compute trajectory samples
+            double N = spline_dist/(0.02*ref_vel/2.24);
+            double x_point = x_increment + spline_x/N;
+            double y_point = ref_s(x_point);
 
+            x_increment = x_point;
 
+            double x_ref = x_point;
+            double y_ref = y_point;
+
+            x_point = x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw);
+            y_point = x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw);
+
+            x_point += ref_x;
+            y_point += ref_y;
+
+            next_x_vals.push_back(x_point);
+            next_y_vals.push_back(y_point);
+          }
+          */
+          
+          json msgJson;
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
