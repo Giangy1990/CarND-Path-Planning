@@ -5,6 +5,7 @@ Planner::Planner(double max_speed_, double max_acc_, int lane_, float dt){
   max_acc = max_acc_;
   ego.lane = lane_;
   time_step = dt;
+  curr_state = PATH_FOLLOW;
   obstacle_t obs;
   for (int count = 0; count < 5; ++count){
     obstacles.push_back(obs);
@@ -18,34 +19,144 @@ void Planner::resetObjects(){
   }
 }
 
-void Planner::findObstacles(const vector<vector<double> >& sensor_fusion, const vector<double> map_waypoints_x, const vector<double> map_waypoints_y){
+double Planner::getSpeed(){
+  if (obstacles[1].lane == -1){
+    return max_speed;
+  }
+  else{
+    double vx = obstacles[1].vx;
+    double vy = obstacles[1].vy;
+    double speed = sqrt(vx*vx + vy*vy);
+    return speed;
+  }
+}
+
+int Planner::whichLane(double car_d){
+  int car_lane = -1;
+  // check in which lane the car is
+  if ( car_d > 0 && car_d <= 4 ) {
+    car_lane = 0;
+  }
+  else if ( car_d > 4 && car_d <= 8 ) {
+    car_lane = 1;
+  }
+  else if ( car_d > 8 && car_d < 12 ) {
+    car_lane = 2;
+  }
+  
+  return car_lane;
+}
+
+void Planner::setState(double car_x, double car_y, double car_s, double car_d, double car_yaw, double car_speed, const vector<double>& previous_path_x, const vector<double>& previous_path_y, const vector<double> &maps_x, const vector<double> &maps_y){
+  prev_size = previous_path_x.size();
+  
+  if (prev_size < 2){
+    // set current state
+    ego.x = car_x;
+    ego.y = car_y;
+    ego.yaw = car_yaw;
+    ego.s = car_s;
+    ego.d = car_d;
+    ego.speed = car_speed;
+    ego.lane = whichLane(car_d);
+  }
+  else{
+    // compute current state
+    double prev_x = previous_path_x[prev_size - 2];
+    double prev_y = previous_path_y[prev_size - 2];
+    
+    ego.x = previous_path_x[prev_size - 1];
+    ego.y = previous_path_y[prev_size - 1];
+    ego.yaw = atan2(ego.y - prev_y, ego.x - prev_x);
+    
+    vector<double> frenet = getFrenet(ego.x, ego.y, ego.yaw, maps_x, maps_y);
+    ego.s = frenet[0];
+    ego.d = frenet[1];
+    
+    double dx = sqrt(pow(ego.x - prev_x, 2) + pow(ego.y - prev_y, 2));
+    ego.speed = dx*2.24/time_step;
+    ego.lane = whichLane(car_d);
+  }
+  
+}
+
+double Planner::predictObstacle(const vector<double>& obs){
+  double curr_vx = obs[3];
+  double curr_vy = obs[4];
+  double curr_s = obs[5];
+  double T = prev_size*time_step;
+  
+  double speed = sqrt(curr_vx*curr_vx + curr_vy*curr_vy);
+  
+  return (curr_s + speed*T);
+}
+
+double Planner::laneChangeSpeed(obstacle_t& front, obstacle_t& rear){
+  double speed = 0;
+  
+  if (rear.lane == -1){
+    // there is no vehicle behind us in the target lane
+    if (front.lane == -1){
+      // no vehicle in the target lane
+      speed = max_speed;
+    }
+    else{
+      // only front vehicle is present
+      double vx = front.vx;
+      double vy = front.vy;
+      speed = sqrt(vx*vx + vy*vy);
+    }
+  }
+  else{
+    // there is a vehicle behind us in the target lane
+    double vx = rear.vx;
+    double vy = rear.vy;
+    double rear_speed = sqrt(vx*vx + vy*vy);
+    if (rear_speed <= ego.ref_speed){
+      // if the vehicle behind us is slower or at least it travels at my ref speed, I can evaluate the lane change
+      if (front.lane == -1){
+        // there is no vehicle ahead of us
+        speed = max_speed;
+      }
+      else{
+        // there is a vehicle ahead of us
+        double vx = front.vx;
+        double vy = front.vy;
+        double front_speed = sqrt(vx*vx + vy*vy);
+        if (front_speed >= ego.ref_speed){
+          // the ahead vehicle is faster than us or at least it travels at our speed
+          speed = front_speed;
+        }
+      }
+    }
+  }
+  return speed;
+}
+
+bool Planner::laneChangeSpace(obstacle_t& front, obstacle_t& rear){
+  bool rear_space = (fabs(ego.s - rear.s) >= 5);
+  bool front_space = (fabs(front.s - ego.s) >= 5);
+  return rear_space && front_space;
+}
+
+void Planner::findObstacles(const vector<vector<double> >& sensor_fusion){
   // initialize obstacles
   resetObjects();
   
   for ( int sensor_idx = 0; sensor_idx < sensor_fusion.size(); ++sensor_idx ) {
-    // predixt = [x, y, s, d]
-    vector<double> predict = predictObstacle(sensor_fusion[sensor_idx], map_waypoints_x, map_waypoints_y);
-    double car_d = predict[3];
-    int car_lane = -1;
-    
+    double car_d = sensor_fusion[sensor_idx][6];
+      
     // check in which lane the car is
-    if ( car_d > 0 && car_d < 4 ) {
-      car_lane = 0;
-    }
-    else if ( car_d > 4 && car_d < 8 ) {
-      car_lane = 1;
-    }
-    else if ( car_d > 8 && car_d < 12 ) {
-      car_lane = 2;
-    }
+    int car_lane = whichLane(car_d);
+    
     // check the validity of the car_lane
     if (car_lane < 0) {
       continue;
     }
     
     // check that the obstacle is in a distance range when we reach last prev traj point
-    double check_car_s = predict[2];
-    double validity_range = 30;
+    double check_car_s = predictObstacle(sensor_fusion[sensor_idx]);
+    double validity_range = 20;
     if (fabs(ego.s - check_car_s) < validity_range){
       continue;
     }
@@ -97,32 +208,58 @@ void Planner::findObstacles(const vector<vector<double> >& sensor_fusion, const 
   }
 }
 
-double Planner::getSpeed(){
-  if (obstacles[1].lane == -1){
-    return max_speed;
-  }
-  else{
-    double vx = obstacles[1].vx;
-    double vy = obstacles[1].vy;
-    double speed = sqrt(vx*vx + vy*vy);
-    return speed;
-  }
-}
+void Planner::chooseManeuvre(){
+  switch(curr_state){
+    case PATH_FOLLOW:
+      double target_speed, left_speed, right_speed;
+      bool left_lane, right_lane, left_space, right_space;
+        
+      // current lane info
+      target_speed = getSpeed();
 
-void Planner::setState(double car_x, double car_y, double car_s, double car_d, double car_yaw, double car_speed, int size){
-  ego.x = car_x;
-  ego.y = car_y;
-  ego.s = car_s;
-  ego.d = car_d;
-  ego.yaw = car_yaw;
-  ego.speed = car_speed;
-  prev_size = size;
+      // left lane info
+      left_lane = ((ego.lane - 1) >= 0);
+      left_speed = laneChangeSpeed(obstacles[0], obstacles[3]);
+      left_space = laneChangeSpace(obstacles[0], obstacles[3]);
+      
+      // right lane info
+      right_lane = ((ego.lane + 1) <= 2);
+      right_speed = laneChangeSpeed(obstacles[2], obstacles[4]);
+      right_space = laneChangeSpace(obstacles[2], obstacles[4]);
+
+      // logics
+      if (left_lane && left_speed > target_speed && left_space){
+        // if there is a lane on the left and the speed in that lane is greater than tho one on the current lane, than change lane
+        ego.lane -= 1;
+        ego.ref_speed = left_speed;
+      }
+      else if (right_lane && right_speed > target_speed && right_space){
+        // if there is a lane on the right and the speed in that lane is greater than tho one on the current lane, than change lane
+        ego.lane += 1;
+        ego.ref_speed = right_speed;
+      }
+      else{
+        ego.ref_speed = target_speed;
+      }
+      
+      if (whichLane(ego.d) != ego.lane){
+        // switch to lane change state
+        curr_state = LANE_CHANGE;
+      }
+      break;
+      
+    case LANE_CHANGE:
+      if (whichLane(ego.d) == ego.lane){
+        // switch to lane change state
+        curr_state = PATH_FOLLOW;
+      }
+      break;
+  }
 }
 
 void Planner::computeTrajectory(const vector<double>& previous_path_x, const vector<double>& previous_path_y, const vector<double> map_waypoints_x,
   const vector<double> map_waypoints_y, const vector<double> map_waypoints_s, vector<double>& next_x_vals, vector<double>& next_y_vals){
   vector<double> pnt_x, pnt_y;
-  int prev_size = previous_path_x.size();
   double ref_x, ref_y, ref_yaw, ref_vel, prev_x, prev_y;
   if (prev_size < 2){
     // compute ref e prev points
@@ -130,10 +267,6 @@ void Planner::computeTrajectory(const vector<double>& previous_path_x, const vec
     prev_y = ego.y - sin(ego.yaw);
     ref_x = ego.x;
     ref_y = ego.y;
-    ref_yaw = ego.yaw;
-
-    // setinitial speed
-    ref_vel = ego.speed;
   }
   else{
     // compute ref e prev points
@@ -141,12 +274,13 @@ void Planner::computeTrajectory(const vector<double>& previous_path_x, const vec
     prev_y = previous_path_y[prev_size - 2];
     ref_x = previous_path_x[prev_size - 1];
     ref_y = previous_path_y[prev_size - 1];
-    ref_yaw = atan2(ref_y - prev_y, ref_x - prev_x);
-
-    // setinitial speed
-    double dx = sqrt(pow(ref_x - prev_x, 2) + pow(ref_y - prev_y, 2));
-    ref_vel = dx*2.24/time_step;
   }
+  
+  // set initial speed
+  ref_vel = ego.speed;
+  
+  // set initial yaw
+  ref_yaw = ego.yaw;
   
   // set initial points fo spline
   pnt_x.push_back(prev_x);
@@ -190,16 +324,14 @@ void Planner::computeTrajectory(const vector<double>& previous_path_x, const vec
   double x_increment = 0;
   
   // get reference speed
-  ego.ref_speed = getSpeed();
-  
   for( int i = 1; i < 50 - prev_size; i++ ) {
     // regulate the speed
     if (ref_vel < ego.ref_speed){
-      // increase speed till max speed
+      // increase speed till ref speed
       ref_vel = fmin(ref_vel + max_acc, ego.ref_speed);
     }
     else{
-      // decrease speed till max speed
+      // decrease speed till ref speed
       ref_vel = fmax(ref_vel - max_acc, ego.ref_speed);
     }
 
@@ -222,19 +354,4 @@ void Planner::computeTrajectory(const vector<double>& previous_path_x, const vec
     next_x_vals.push_back(x_point);
     next_y_vals.push_back(y_point);
   } 
-}
-
-vector<double> predictObstacle(const vector<double>& obs, const vector<double> &maps_x, const vector<double> &maps_y){
-  double curr_x = obs[1];
-  double curr_y = obs[2];
-  double curr_vx = obs[3];
-  double curr_vy = obs[4];
-  double T = prev_size*time_step;
-  
-  double new_x = curr_x + T*curr_vx;
-  double new_y = curr_y + T*curr_vy;
-  double theta = atan2(new_y - curr_y, new_x - curr_x);
-  vector<double> frenet = getFrenet(new_x, new_y, theta, maps_x, maps_y);
-  
-  return {new_x, new_y, frenet[0], frenet[1]};
 }
