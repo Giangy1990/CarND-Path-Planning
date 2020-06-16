@@ -11,6 +11,14 @@
 #define PATH_FOLLOW 1U
 #define LANE_CHANGE 2U
 
+#define FRONT_LEFT_OBSTACLE 0U
+#define FRONT_OBSTACLE 1U
+#define FRONT_RIGHT_OBSTACLE 2U
+#define REAR_LEFT_OBSTACLE 3U
+#define REAR_RIGHT_OBSTACLE 4U
+
+#define EVALUATE_RANGE 30
+
 using std::vector;
 
 class Planner{
@@ -37,6 +45,7 @@ class Planner{
   vector<obstacle_t> obstacles;
   typedef struct{
     int lane;
+    int target_lane;
     double x;
     double y;
     double s;
@@ -50,7 +59,7 @@ class Planner{
   float time_step;
   
   int whichLane(double car_d);
-  double getSpeed();
+  double getSpeed(int target_obs);
   void resetObjects();
   double predictObstacle(const vector<double>& obs);
   double laneChangeSpeed(obstacle_t& front, obstacle_t& rear);

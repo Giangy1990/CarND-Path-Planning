@@ -96,7 +96,7 @@ int main() {
           auto sensor_fusion = j[1]["sensor_fusion"];
           
           // update ego state into planner class
-          plan.setState(car_x, car_y, car_s, car_d, car_yaw, car_speed, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y);
+          plan.setState(car_x, car_y, car_s, car_d, deg2rad(car_yaw), car_speed, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y);
           
           // Prediction : Analysing other cars positions.
           plan.findObstacles(sensor_fusion);

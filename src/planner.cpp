@@ -19,13 +19,13 @@ void Planner::resetObjects(){
   }
 }
 
-double Planner::getSpeed(){
-  if (obstacles[1].lane == -1){
+double Planner::getSpeed(int target_obs){
+  if (obstacles[target_obs].lane == -1){
     return max_speed;
   }
   else{
-    double vx = obstacles[1].vx;
-    double vy = obstacles[1].vy;
+    double vx = obstacles[target_obs].vx;
+    double vy = obstacles[target_obs].vy;
     double speed = sqrt(vx*vx + vy*vy);
     return speed;
   }
@@ -75,7 +75,7 @@ void Planner::setState(double car_x, double car_y, double car_s, double car_d, d
     
     double dx = sqrt(pow(ego.x - prev_x, 2) + pow(ego.y - prev_y, 2));
     ego.speed = dx*2.24/time_step;
-    ego.lane = whichLane(car_d);
+    ego.lane = whichLane(ego.d);
   }
   
 }
@@ -94,7 +94,7 @@ double Planner::predictObstacle(const vector<double>& obs){
 double Planner::laneChangeSpeed(obstacle_t& front, obstacle_t& rear){
   double speed = 0;
   
-  if (rear.lane == -1){
+  if (rear.lane == -1 || (ego.s - rear.s) > EVALUATE_RANGE){
     // there is no vehicle behind us in the target lane
     if (front.lane == -1){
       // no vehicle in the target lane
@@ -134,8 +134,8 @@ double Planner::laneChangeSpeed(obstacle_t& front, obstacle_t& rear){
 }
 
 bool Planner::laneChangeSpace(obstacle_t& front, obstacle_t& rear){
-  bool rear_space = (fabs(ego.s - rear.s) >= 5);
-  bool front_space = (fabs(front.s - ego.s) >= 5);
+  bool rear_space = ((ego.s - rear.s) >= 5) || (rear.lane == -1);
+  bool front_space = ((front.s - ego.s) >= 5) || (front.lane == -1);
   return rear_space && front_space;
 }
 
@@ -154,55 +154,51 @@ void Planner::findObstacles(const vector<vector<double> >& sensor_fusion){
       continue;
     }
     
-    // check that the obstacle is in a distance range when we reach last prev traj point
+    // predict the obstacle abscissa when we reach last prev traj point
     double check_car_s = predictObstacle(sensor_fusion[sensor_idx]);
-    double validity_range = 20;
-    if (fabs(ego.s - check_car_s) < validity_range){
-      continue;
-    }
     
     // save obstacles
     if ( car_lane == ego.lane ) {
       // Car in our lane.
-      if (check_car_s > ego.s && (obstacles[1].lane == -1 || check_car_s < obstacles[1].s)){
-        obstacles[1].lane = car_lane;
-        obstacles[1].s = check_car_s;
-        obstacles[1].d = car_d;
-        obstacles[1].vx = sensor_fusion[sensor_idx][3];
-        obstacles[1].vy = sensor_fusion[sensor_idx][4];
+      if (check_car_s > ego.s && (obstacles[FRONT_OBSTACLE].lane == -1 || check_car_s < obstacles[FRONT_OBSTACLE].s)){
+        obstacles[FRONT_OBSTACLE].lane = car_lane;
+        obstacles[FRONT_OBSTACLE].s = check_car_s;
+        obstacles[FRONT_OBSTACLE].d = car_d;
+        obstacles[FRONT_OBSTACLE].vx = sensor_fusion[sensor_idx][3];
+        obstacles[FRONT_OBSTACLE].vy = sensor_fusion[sensor_idx][4];
       }
     }
     else if ( car_lane - ego.lane == -1 ) {
       // Car left
-      if (check_car_s > ego.s && (obstacles[0].lane == -1 || check_car_s < obstacles[0].s)){
-        obstacles[0].lane = car_lane;
-        obstacles[0].s = check_car_s;
-        obstacles[0].d = car_d;
-        obstacles[0].vx = sensor_fusion[sensor_idx][3];
-        obstacles[0].vy = sensor_fusion[sensor_idx][4];
+      if (check_car_s > ego.s && (obstacles[FRONT_LEFT_OBSTACLE].lane == -1 || check_car_s < obstacles[FRONT_LEFT_OBSTACLE].s)){
+        obstacles[FRONT_LEFT_OBSTACLE].lane = car_lane;
+        obstacles[FRONT_LEFT_OBSTACLE].s = check_car_s;
+        obstacles[FRONT_LEFT_OBSTACLE].d = car_d;
+        obstacles[FRONT_LEFT_OBSTACLE].vx = sensor_fusion[sensor_idx][3];
+        obstacles[FRONT_LEFT_OBSTACLE].vy = sensor_fusion[sensor_idx][4];
       }
-      else if (check_car_s < ego.s && (obstacles[3].lane == -1 || check_car_s > obstacles[3].s)){
-        obstacles[3].lane = car_lane;
-        obstacles[3].s = check_car_s;
-        obstacles[3].d = car_d;
-        obstacles[3].vx = sensor_fusion[sensor_idx][3];
-        obstacles[3].vy = sensor_fusion[sensor_idx][4];
+      else if (check_car_s < ego.s && (obstacles[REAR_LEFT_OBSTACLE].lane == -1 || check_car_s > obstacles[REAR_LEFT_OBSTACLE].s)){
+        obstacles[REAR_LEFT_OBSTACLE].lane = car_lane;
+        obstacles[REAR_LEFT_OBSTACLE].s = check_car_s;
+        obstacles[REAR_LEFT_OBSTACLE].d = car_d;
+        obstacles[REAR_LEFT_OBSTACLE].vx = sensor_fusion[sensor_idx][3];
+        obstacles[REAR_LEFT_OBSTACLE].vy = sensor_fusion[sensor_idx][4];
       }
     } else if ( car_lane - ego.lane == 1 ) {
       // Car right
-      if (check_car_s > ego.s && (obstacles[2].lane == -1 || check_car_s < obstacles[2].s)){
-        obstacles[2].lane = car_lane;
-        obstacles[2].s = check_car_s;
-        obstacles[2].d = car_d;
-        obstacles[2].vx = sensor_fusion[sensor_idx][3];
-        obstacles[2].vy = sensor_fusion[sensor_idx][4];
+      if (check_car_s > ego.s && (obstacles[FRONT_RIGHT_OBSTACLE].lane == -1 || check_car_s < obstacles[FRONT_RIGHT_OBSTACLE].s)){
+        obstacles[FRONT_RIGHT_OBSTACLE].lane = car_lane;
+        obstacles[FRONT_RIGHT_OBSTACLE].s = check_car_s;
+        obstacles[FRONT_RIGHT_OBSTACLE].d = car_d;
+        obstacles[FRONT_RIGHT_OBSTACLE].vx = sensor_fusion[sensor_idx][3];
+        obstacles[FRONT_RIGHT_OBSTACLE].vy = sensor_fusion[sensor_idx][4];
       }
-      else if (check_car_s < ego.s && (obstacles[4].lane == -1 || check_car_s > obstacles[4].s)){
-        obstacles[4].lane = car_lane;
-        obstacles[4].s = check_car_s;
-        obstacles[4].d = car_d;
-        obstacles[4].vx = sensor_fusion[sensor_idx][3];
-        obstacles[4].vy = sensor_fusion[sensor_idx][4];
+      else if (check_car_s < ego.s && (obstacles[REAR_RIGHT_OBSTACLE].lane == -1 || check_car_s > obstacles[REAR_RIGHT_OBSTACLE].s)){
+        obstacles[REAR_RIGHT_OBSTACLE].lane = car_lane;
+        obstacles[REAR_RIGHT_OBSTACLE].s = check_car_s;
+        obstacles[REAR_RIGHT_OBSTACLE].d = car_d;
+        obstacles[REAR_RIGHT_OBSTACLE].vx = sensor_fusion[sensor_idx][3];
+        obstacles[REAR_RIGHT_OBSTACLE].vy = sensor_fusion[sensor_idx][4];
       }
     }
   }
@@ -214,44 +210,60 @@ void Planner::chooseManeuvre(){
       double target_speed, left_speed, right_speed;
       bool left_lane, right_lane, left_space, right_space;
         
-      // current lane info
-      target_speed = getSpeed();
+      // check if the front obstacle is in the chancge lane evaluation range
+      if ((obstacles[FRONT_OBSTACLE].s - ego.s) < EVALUATE_RANGE){
+        // the obstacles ahead of us is too close
+        target_speed = getSpeed(FRONT_OBSTACLE);
+      }
+      else{
+        ego.ref_speed = max_speed;
+        break;
+      }
 
       // left lane info
       left_lane = ((ego.lane - 1) >= 0);
-      left_speed = laneChangeSpeed(obstacles[0], obstacles[3]);
-      left_space = laneChangeSpace(obstacles[0], obstacles[3]);
+      left_speed = laneChangeSpeed(obstacles[FRONT_LEFT_OBSTACLE], obstacles[REAR_LEFT_OBSTACLE]);
+      left_space = laneChangeSpace(obstacles[FRONT_LEFT_OBSTACLE], obstacles[REAR_LEFT_OBSTACLE]);
       
       // right lane info
       right_lane = ((ego.lane + 1) <= 2);
-      right_speed = laneChangeSpeed(obstacles[2], obstacles[4]);
-      right_space = laneChangeSpace(obstacles[2], obstacles[4]);
+      right_speed = laneChangeSpeed(obstacles[FRONT_RIGHT_OBSTACLE], obstacles[REAR_RIGHT_OBSTACLE]);
+      right_space = laneChangeSpace(obstacles[FRONT_RIGHT_OBSTACLE], obstacles[REAR_RIGHT_OBSTACLE]);
 
       // logics
       if (left_lane && left_speed > target_speed && left_space){
         // if there is a lane on the left and the speed in that lane is greater than tho one on the current lane, than change lane
-        ego.lane -= 1;
+        ego.target_lane = ego.lane - 1;
         ego.ref_speed = left_speed;
       }
       else if (right_lane && right_speed > target_speed && right_space){
         // if there is a lane on the right and the speed in that lane is greater than tho one on the current lane, than change lane
-        ego.lane += 1;
+        ego.target_lane = ego.lane + 1;
         ego.ref_speed = right_speed;
       }
       else{
+        ego.target_lane = ego.lane;
         ego.ref_speed = target_speed;
       }
       
-      if (whichLane(ego.d) != ego.lane){
+      if (ego.target_lane != ego.lane){
         // switch to lane change state
         curr_state = LANE_CHANGE;
       }
       break;
       
     case LANE_CHANGE:
-      if (whichLane(ego.d) == ego.lane){
+      if (ego.target_lane == ego.lane){
         // switch to lane change state
         curr_state = PATH_FOLLOW;
+      }
+      else if (ego.target_lane < ego.lane){
+        // target lane on the left, check the max allowed speed
+        ego.ref_speed = getSpeed(FRONT_LEFT_OBSTACLE);
+      }
+      else{
+        // target lane on the right, check the max allowed speed
+        ego.ref_speed = getSpeed(FRONT_RIGHT_OBSTACLE);
       }
       break;
   }
@@ -292,7 +304,7 @@ void Planner::computeTrajectory(const vector<double>& previous_path_x, const vec
   int lookahead = 90;
   int step_s = 30;
   for (float delta_s = step_s; delta_s <= lookahead; delta_s += step_s){
-    vector<double> next_waypoint = getXY(ego.s + delta_s, 2 + 4*ego.lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+    vector<double> next_waypoint = getXY(ego.s + delta_s, 2 + 4*ego.target_lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
     pnt_x.push_back(next_waypoint[0]);
     pnt_y.push_back(next_waypoint[1]);
   }
@@ -317,14 +329,14 @@ void Planner::computeTrajectory(const vector<double>& previous_path_x, const vec
   }
 
   // compute the spline variation that guarantees the desired velocity
-  double spline_x = 50;
+  double spline_x = 30.0;
   double spline_y = ref_s(spline_x);
   double spline_dist = sqrt(spline_x*spline_x + spline_y*spline_y);
 
   double x_increment = 0;
   
   // get reference speed
-  for( int i = 1; i < 50 - prev_size; i++ ) {
+  for( int i = 1; i <= 50 - prev_size; i++ ) {
     // regulate the speed
     if (ref_vel < ego.ref_speed){
       // increase speed till ref speed
