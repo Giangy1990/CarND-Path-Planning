@@ -113,7 +113,7 @@ From **line 336** to **line 368**, it updates the trajectory according to the pr
 
 ## Results
 The submitted program is able to drive on the highway path without hitting other cars and violating any comfort constraints.\
-In this [video](./src/simulator_record.mp4) there is a demo in which the car drives for 5 miles.
+In this [video](./media/simulator_record.mp4) there is a demo in which the car drives for 5 miles.
 
 ## Open points
 There are some aspects that could be improved from the current solution:
