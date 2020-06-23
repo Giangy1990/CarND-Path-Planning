@@ -11,6 +11,10 @@
 #define PATH_FOLLOW 1U
 #define LANE_CHANGE 2U
 
+#define LEFT_LANE 0U
+#define CENTER_LANE 1U
+#define RIGHT_LANE 2U
+
 #define FRONT_LEFT_OBSTACLE 0U
 #define FRONT_OBSTACLE 1U
 #define FRONT_RIGHT_OBSTACLE 2U
@@ -18,6 +22,10 @@
 #define REAR_RIGHT_OBSTACLE 4U
 
 #define EVALUATE_RANGE 30
+#define REAR_SAFETY_RANGE 30
+#define FRONT_SAFETY_RANGE 20
+
+#define NUM_TRAJECTORY_POINTS 50
 
 using std::vector;
 
@@ -29,8 +37,8 @@ class Planner{
   void chooseManeuvre();
   void computeTrajectory(const vector<double>& previous_path_x, const vector<double>& previous_path_y, const vector<double> map_waypoints_x,
   const vector<double> map_waypoints_y, const vector<double> map_waypoints_s, vector<double>& next_x_vals, vector<double>& next_y_vals);
-  
-  
+
+
   private:
   int curr_state;
   double max_speed;
@@ -41,6 +49,7 @@ class Planner{
     double s = std::numeric_limits<double>::max();
     double vx = 0;
     double vy = 0;
+    double getSpeed(){ return sqrt(vx*vx + vy*vy);}
   } obstacle_t;
   vector<obstacle_t> obstacles;
   typedef struct{
@@ -52,15 +61,16 @@ class Planner{
     double d;
     double yaw;
     double speed;
-    double ref_speed;
+    double target_speed;
   } ego_t;
   ego_t ego;
   int prev_size;
   float time_step;
-  
+
   int whichLane(double car_d);
   double getSpeed(int target_obs);
   void resetObjects();
+  void bestLane();
   double predictObstacle(const vector<double>& obs);
   double laneChangeSpeed(obstacle_t& front, obstacle_t& rear);
   bool laneChangeSpace(obstacle_t& front, obstacle_t& rear);
