@@ -1,6 +1,6 @@
 [//]: # (Image References)
 
-[image1]: ./media/path_follow_state.png "Behavior Planner"
+[image1]: ./media/best_lane.png "bestLane function"
 
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
@@ -79,7 +79,7 @@ If the previous path has less than 2 points, the ego state will be set according
 This policy guarantees a continuity in the planned trajectory.
 
 ### findObstacles
-This method (**line 142-205** of [planner.cpp](./src/planner.cpp)) looks over all the obstacles provided by the sensor fusion and selects the five obstacles closest to the ego vehicle. In particular, it fills a class attribute that contains:
+This method (**line 120-183** of [planner.cpp](./src/planner.cpp)) looks over all the obstacles provided by the sensor fusion and selects the five obstacles closest to the ego vehicle. In particular, it fills a class attribute that contains:
 * the front left obstacles;
 * the ahead obstacle;
 * the front right obstacle;
@@ -94,29 +94,24 @@ Each obstacle has the following attributes:
 * vy: current y component of the speed;
 
 ### chooseManeuvre
-This method (**line 207-270** of [planner.cpp](./src/planner.cpp)) is the core of the behavioral planning. It has the task to choose the best maneuver to perform to increase the ego speed and avoid collision with the other cars on the road (named obstacles in the class representation).
-It implements a two state machine:
-* ***PATH_FOLLOW***: this is the main state in which the class evaluates the best lane to follow to increase the ego speed and avoid the other cars (**line 209-253** of [planner.cpp](./src/planner.cpp));
-* ***LANE_CHANGE***: this state adjusts the ego speed according to the front obstacle state in the destination lane. When the ego reaches the destination lane, it reset the state machine to the ***PATH_FOLLOW*** state(**line 255-268** of [planner.cpp](./src/planner.cpp)).
+This method (**line 185-217** of [planner.cpp](./src/planner.cpp)) implements a two state machine:
+* ***PATH_FOLLOW***: this is the main state in which the class calls the core function ***bestLane()*** that evaluates the best lane to follow to increase the ego speed and avoid the other cars (**line 187-195** of [planner.cpp](./src/planner.cpp)).\
+When the `ego.lane != ego.target_lane`, the state will change in ***LANE_CHANGE***;
+* ***LANE_CHANGE***: this state adjusts the ego speed according to the front obstacle state in the destination lane. When the ego reaches a distance of 0.5 cm from the center of the destination lane, it reset the state machine to the ***PATH_FOLLOW*** state(**line 197-215** of [planner.cpp](./src/planner.cpp)).
 
-The following flow chart diagram shows the logic behind the ***PATH_FOLLOW*** state.
+The following flow chart diagram shows the logic behind the ***bestLane()**** function (**line 219-323** of [planner.cpp](./src/planner.cpp)).
 
 ![alt text][image1]
 
-When the `ego.lane != ego.target_lane`, the state will change in ***LANE_CHANGE***.
-
 ### computeTrajectory
-This method (**line 272-369** of [planner.cpp](./src/planner.cpp)) updates the vehicle trajectory according to the previous computed path and the pair (target lane, target speed) provided by ***chooseManeuvre()*** method.\
+This method (**line 325-432** of [planner.cpp](./src/planner.cpp)) updates the vehicle trajectory according to the previous computed path and the pair (target lane, target speed) provided by ***chooseManeuvre()*** method.\
 It is divided into two main part.\
-From **line 276** to **line 334**, it performs a reference frame conversion from cartesian to Frenet system and uses the spline to compute the waypoints according to the previous path and the target lane.\
-From **line 336** to **line 368**, it updates the trajectory according to the previously computed waypoints and the target speed, and finally it converts back the trajectory from Frenet to cartesian reference frame.
+From **line 328** to **line 401**, it performs a reference frame conversion from cartesian to Frenet system and uses the spline to compute the waypoints according to the previous path and the target lane.\
+From **line 404** to **line 431**, it updates the trajectory according to the previously computed waypoints and the target speed, and finally it converts back the trajectory from Frenet to cartesian reference frame.
 
 ## Results
 The submitted program is able to drive on the highway path without hitting other cars and violating any comfort constraints.\
 In this [video](./media/simulator_record.mp4) there is a demo in which the car drives for 5 miles.
 
 ## Open points
-There are some aspects that could be improved from the current solution:
-* the ***chooseManeuvre()*** method has a policy that evaluates the right lane change only if the left one is not allowed. A possible improvement could be to evaluate both lanes and chose the best solution. For example, choosing the empty lane or the one with the higher final speed.
-
-* the ***findObstacles(...)*** method uses a kinematic prediction with constant speed and lane for the final obstacle state. A possible improvement could be the use of a model that considers the two speed components or a data-driven approach to make more realistic the obstacle behavior.
+The ***findObstacles(...)*** method uses a kinematic prediction with constant speed and lane for the final obstacle state. A possible improvement could be the use of a model that considers the two speed components or a data-driven approach to make more realistic the obstacle behavior.
